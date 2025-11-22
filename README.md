@@ -1,13 +1,32 @@
-# Enterprise Expense Audit System
+# 🏢 Enterprise Expense Audit System
 
-A multi-agent AI system for automated expense auditing, fraud detection, and policy compliance.
+A comprehensive multi-agent system for expense auditing and fraud detection.
 
-## 🚀 Features
+## 🎯 Project Overview
 
-- **Field Extraction Agent**: Extracts structured data from raw receipts using regex and pattern matching
-- **Policy Validation Agent**: Checks expenses against company policies
-- **Fraud Detection Agent**: Uses machine learning to detect anomalies
-- **Audit & Reporting**: Generates comprehensive audit reports and visualizations
-- **Long-term Memory**: Tracks fraud patterns across multiple audit sessions
+### Member 1B - Field Extraction Agent
+- Extracts structured data from raw receipts
+- Uses regex and pattern matching
+- Converts free text → organized JSON
 
-## 📁 Project Structure
+### P2-C - Advanced Fraud Detection
+- **Duplicate Receipt Detection**: vendor + amount + date matching
+- **Vendor Risk Engine**: Identifies high-risk vendors
+- **Behavior Analyzer**: Detects suspicious patterns
+- **Fraud Score Calculator**: Combines multiple risk factors
+
+## 🚀 Quick Start
+
+```bash
+# Clone the repository
+git clone https://github.com/yourusername/EnterpriseExpenseAudit.git
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Run the system
+python main.py
+
+# Run tests
+python test_integration.py
+python test_fraud_patterns.py
