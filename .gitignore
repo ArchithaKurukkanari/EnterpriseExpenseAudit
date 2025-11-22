@@ -1,0 +1,10 @@
+*.pyc
+*.pyc
+*.pyo
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+null
+reports/*.png
+reports/*.jpg

@@ -5,6 +5,7 @@ import sys
 import re
 import json
 from datetime import datetime, timedelta
+from collections import Counter
 
 # Field Extraction Agent Class
 class FieldExtractionAgent:
@@ -14,7 +15,7 @@ class FieldExtractionAgent:
     def extract_vendor(self, raw_text):
         """Extract vendor name from raw text"""
         patterns = [
-            r'(Uber|Lyft|Taxi|Cab|OLA|McDonald|KFC|Amazon|Flipkart|Starbucks)',
+            r'(Uber|Lyft|Taxi|Cab|OLA|McDonald|KFC|Amazon|Flipkart|Starbucks|Zomato|Swiggy|RECHARGE|GIFT)',
             r'([A-Z][a-z]+ Restaurant|[A-Z][a-z]+ Cafe|Burger King|Pizza Hut)',
             r'(Hotel [A-Z][a-z]+|Motel [A-Z][a-z]+|Marriott|Hilton|Hyatt)',
             r'([A-Z]{2,} Store|[A-Z]{2,} Market|Walmart|Target)',
@@ -68,18 +69,19 @@ class FieldExtractionAgent:
             if match:
                 return match.group(0)
         
-        return datetime.now().strftime("%Y-%m-%d")
+        return datetime.now().strftime("%d %b %Y")
     
     def extract_category(self, raw_text):
         """Extract category from raw text"""
         categories = {
             'Travel': ['uber', 'lyft', 'taxi', 'cab', 'flight', 'train', 'ola', 'airline', 'transport'],
-            'Meals': ['restaurant', 'cafe', 'food', 'dinner', 'lunch', 'breakfast', 'mcdonald', 'kfc', 'starbucks', 'pizza', 'burger'],
+            'Meals': ['restaurant', 'cafe', 'food', 'dinner', 'lunch', 'breakfast', 'mcdonald', 'kfc', 'starbucks', 'pizza', 'burger', 'zomato', 'swiggy'],
             'Entertainment': ['movie', 'concert', 'entertainment', 'casino', 'theater', 'game'],
             'Supplies': ['stationery', 'print', 'copy', 'office supplies', 'store', 'market'],
             'Software': ['software', 'subscription', 'license', 'app', 'digital'],
             'Accommodation': ['hotel', 'motel', 'lodging', 'marriott', 'hilton', 'hyatt', 'inn'],
-            'Shopping': ['amazon', 'flipkart', 'walmart', 'target', 'retail']
+            'Shopping': ['amazon', 'flipkart', 'walmart', 'target', 'retail'],
+            'Personal': ['recharge', 'gift', 'personal', 'mobile', 'prepaid']
         }
         
         text_lower = raw_text.lower()
@@ -137,7 +139,7 @@ class FieldExtractionAgent:
             structured_expenses.append(expense)
             
             # Print extraction results for verification
-            print(f"  Receipt {i+1}: {vendor} - ₹{amount} - {category}")
+            print(f"  Receipt {i+1}: {vendor} - ₹{amount:.2f} - {category}")
         
         return structured_expenses
     
@@ -152,7 +154,179 @@ class FieldExtractionAgent:
         
         return np.random.choice(locations)
 
-# Mock other agent classes for demonstration
+# Enhanced Fraud Detection with Proper Score Calculation
+class AdvancedFraudDetector:
+    def __init__(self):
+        self.high_risk_vendors = ['uber', 'ola', 'zomato', 'swiggy', 'recharge', 'gift', 'personal']
+        self.personal_keywords = ['recharge', 'gift', 'personal', 'mobile', 'entertainment']
+    
+    def detect_duplicates(self, expenses):
+        """Detect duplicate receipts based on vendor + amount + date"""
+        duplicates = []
+        seen = set()
+        
+        for expense in expenses:
+            key = (expense['merchant'].lower(), expense['amount'], expense['date'])
+            if key in seen:
+                duplicates.append(expense)
+            seen.add(key)
+        
+        return duplicates
+    
+    def calculate_vendor_risk(self, vendor, category):
+        """Calculate vendor risk score"""
+        risk_score = 0
+        reasons = []
+        
+        vendor_lower = vendor.lower()
+        
+        # High-risk vendors
+        if any(risk_vendor in vendor_lower for risk_vendor in self.high_risk_vendors):
+            risk_score += 30
+            reasons.append(f"High-risk vendor: {vendor}")
+        
+        # Personal expense keywords
+        if any(keyword in vendor_lower for keyword in self.personal_keywords):
+            risk_score += 25
+            reasons.append("Personal expense detected")
+        
+        # Category mismatch
+        if 'uber' in vendor_lower and category != 'Travel':
+            risk_score += 20
+            reasons.append("Category mismatch: Uber should be Travel")
+        elif 'zomato' in vendor_lower and category != 'Meals':
+            risk_score += 20
+            reasons.append("Category mismatch: Zomato should be Meals")
+        
+        return min(risk_score, 100), reasons
+    
+    def detect_behavior_anomalies(self, expenses):
+        """Detect behavioral anomalies"""
+        anomalies = []
+        
+        # Group by employee and date
+        employee_date_groups = {}
+        for expense in expenses:
+            key = (expense['employee_id'], expense['date'])
+            if key not in employee_date_groups:
+                employee_date_groups[key] = []
+            employee_date_groups[key].append(expense)
+        
+        # Check for multiple same vendor on same day
+        for key, group in employee_date_groups.items():
+            vendor_count = Counter(exp['merchant'] for exp in group)
+            for vendor, count in vendor_count.items():
+                if count > 2:  # More than 2 expenses from same vendor on same day
+                    for exp in group:
+                        if exp['merchant'] == vendor:
+                            anomalies.append({
+                                'expense': exp,
+                                'reason': f"Multiple {vendor} expenses on same day ({count})",
+                                'score': 25
+                            })
+        
+        # Check for same amount patterns
+        amount_count = Counter(exp['amount'] for exp in expenses)
+        for amount, count in amount_count.items():
+            if count > 1 and amount > 0:
+                for exp in expenses:
+                    if exp['amount'] == amount:
+                        anomalies.append({
+                            'expense': exp,
+                            'reason': f"Same amount ₹{amount} repeated {count} times",
+                            'score': 30
+                        })
+        
+        return anomalies
+    
+    def calculate_fraud_score(self, expense, duplicates, vendor_risk_score, vendor_reasons, behavior_anomalies):
+        """Calculate final fraud score combining all factors"""
+        fraud_score = 0
+        all_reasons = []
+        
+        # Check if this expense is a duplicate
+        is_duplicate = any(dup['id'] == expense['id'] for dup in duplicates)
+        if is_duplicate:
+            fraud_score += 40
+            all_reasons.append("Duplicate receipt detected")
+        
+        # Add vendor risk score
+        fraud_score += vendor_risk_score
+        all_reasons.extend(vendor_reasons)
+        
+        # Add behavior anomalies
+        for anomaly in behavior_anomalies:
+            if anomaly['expense']['id'] == expense['id']:
+                fraud_score += anomaly['score']
+                all_reasons.append(anomaly['reason'])
+        
+        # Determine decision
+        if fraud_score >= 70:
+            decision = "REJECT"
+            is_anomaly = True
+        elif fraud_score >= 50:
+            decision = "NEEDS_REVIEW" 
+            is_anomaly = True
+        else:
+            decision = "APPROVE"
+            is_anomaly = False
+        
+        return {
+            "final_risk_score": min(fraud_score, 100),
+            "decision": decision,
+            "reasons": all_reasons,
+            "is_anomaly": is_anomaly,
+            "is_duplicate": is_duplicate,
+            "vendor_risk_score": vendor_risk_score
+        }
+    
+    def analyze_expenses(self, expenses):
+        """Complete fraud analysis for all expenses"""
+        print("    🔍 Analyzing duplicates...")
+        duplicates = self.detect_duplicates(expenses)
+        print(f"       Found {len(duplicates)} potential duplicates")
+        
+        print("    🔍 Analyzing vendor risk...")
+        print("    🔍 Analyzing behavior patterns...")
+        behavior_anomalies = self.detect_behavior_anomalies(expenses)
+        print(f"       Found {len(behavior_anomalies)} behavior anomalies")
+        
+        results = []
+        for expense in expenses:
+            vendor_risk_score, vendor_reasons = self.calculate_vendor_risk(
+                expense['merchant'], expense['category']
+            )
+            
+            fraud_result = self.calculate_fraud_score(
+                expense, duplicates, vendor_risk_score, vendor_reasons, behavior_anomalies
+            )
+            
+            results.append({
+                'expense_id': expense['id'],
+                'employee_id': expense['employee_id'],
+                'amount': expense['amount'],
+                'category': expense['category'],
+                'merchant': expense['merchant'],
+                'is_anomaly': fraud_result['is_anomaly'],
+                'anomaly_score': fraud_result['final_risk_score'] / 100.0,
+                'fraud_score': fraud_result['final_risk_score'],
+                'fraud_decision': fraud_result['decision'],
+                'fraud_reasons': fraud_result['reasons'],
+                'is_duplicate': fraud_result['is_duplicate'],
+                'vendor_risk_score': fraud_result['vendor_risk_score']
+            })
+        
+        return pd.DataFrame(results)
+
+# Import the enhanced FraudDetectionAgent
+try:
+    from src.agents.fraud_detection_agent import FraudDetectionAgent
+    USE_ENHANCED_AGENT = True
+    print("✅ Using enhanced FraudDetectionAgent with rule-based detection")
+except ImportError as e:
+    USE_ENHANCED_AGENT = False
+    print(f"⚠️ Using built-in AdvancedFraudDetector: {e}")
+
 class PolicyAgent:
     def __init__(self, memory, config):
         self.memory = memory
@@ -165,32 +339,18 @@ class PolicyAgent:
         df['violations'] = df.apply(lambda x: ['Weekend expense'] if x['violation_count'] > 0 else [], axis=1)
         return df
 
-class FraudDetectionAgent:
-    def __init__(self, memory, config):
-        self.memory = memory
-        self.config = config
-    
-    def detect_anomalies(self, expenses_data):
-        """Mock fraud detection"""
-        df = pd.DataFrame(expenses_data)
-        df['is_anomaly'] = np.random.choice([True, False], len(df), p=[0.1, 0.9])
-        df['anomaly_score'] = np.random.uniform(0, 1, len(df))
-        return df
-    
-    def detect_behavioral_patterns(self, expenses_df):
-        """Mock behavioral analysis"""
-        return pd.DataFrame([{'pattern': 'test', 'count': 1}])
-
 class AuditAgent:
     def __init__(self, memory, config):
         self.memory = memory
         self.config = config
     
     def generate_audit_report(self, policy_results, fraud_results, behavioral_patterns):
-        """Mock audit report"""
+        """Enhanced audit report with fraud insights"""
+        high_risk_policy = len(policy_results[policy_results['violation_count'] > 0])
+        
         return {
             'risk_assessment': {
-                'high_risk_count': len(policy_results[policy_results['violation_count'] > 0]),
+                'high_risk_count': high_risk_policy,
                 'medium_risk_count': len(behavioral_patterns),
                 'low_risk_count': 0
             },
@@ -226,29 +386,61 @@ class ReportingAgent:
 class MemoryManager:
     def __init__(self):
         self.memory_data = {}
+        self.historical_expenses = []
     
     def save_memory(self, filename):
         """Save memory to file"""
         with open(filename, 'w') as f:
             json.dump(self.memory_data, f, indent=2)
         return True
+    
+    def get_employee_behavior(self, employee_id):
+        """Mock employee behavior data"""
+        return {'total_amount': 5000, 'total_expenses': 15}
+    
+    def get_historical_expenses(self):
+        """Get historical expenses for duplicate detection"""
+        return self.historical_expenses
 
 class Config:
     def __init__(self):
         self.settings = {}
+        # Add expense configuration for ML detection
+        self.EXPENSE = type('EXPENSE', (), {
+            'thresholds': {
+                'Travel': 1000,
+                'Meals': 500,
+                'Entertainment': 300,
+                'Supplies': 200,
+                'Software': 2000,
+                'Accommodation': 2000,
+                'Shopping': 1000,
+                'Other': 500,
+                'Personal': 200
+            },
+            'categories': ['Travel', 'Meals', 'Entertainment', 'Supplies', 'Software', 'Accommodation', 'Shopping', 'Other', 'Personal']
+        })()
 
 # Main System Class
 class EnterpriseExpenseAuditSystem:
     def __init__(self):
         self.config = Config()
         self.memory = MemoryManager()
+        self.advanced_fraud_detector = AdvancedFraudDetector()
+        
         self.agents = {
             'field_extraction': FieldExtractionAgent(),
             'policy': PolicyAgent(self.memory, self.config),
-            'fraud': FraudDetectionAgent(self.memory, self.config),
             'audit': AuditAgent(self.memory, self.config),
             'reporting': ReportingAgent(self.memory, self.config)
         }
+        
+        # Use enhanced agent if available, otherwise use built-in
+        if USE_ENHANCED_AGENT:
+            self.agents['fraud'] = FraudDetectionAgent(self.memory, self.config)
+        else:
+            self.agents['fraud'] = self.advanced_fraud_detector
+            
         print("Enterprise Expense Audit System initialized successfully!")
     
     def process_raw_receipts(self, raw_receipts):
@@ -263,27 +455,49 @@ class EnterpriseExpenseAuditSystem:
         return self.process_expenses(structured_expenses)
     
     def process_expenses(self, expenses_data):
-        """Process expenses through all agents"""
+        """Process expenses through all agents - ENHANCED VERSION"""
         print(f"2. Processing {len(expenses_data)} structured expenses through multi-agent system...")
         
         # Policy validation
         print("3. Running policy validation...")
         policy_results = self.agents['policy'].batch_validate(expenses_data)
         
-        # Fraud detection
-        print("4. Running fraud detection...")
-        fraud_results = self.agents['fraud'].detect_anomalies(expenses_data)
+        # ENHANCED FRAUD DETECTION
+        print("4. Running ADVANCED rule-based fraud detection...")
+        rule_based_results = self.advanced_fraud_detector.analyze_expenses(expenses_data)
+        
+        # ML fraud detection (if available)
+        if USE_ENHANCED_AGENT:
+            print("4a. Running ML fraud detection...")
+            fraud_results = self.agents['fraud'].detect_anomalies(expenses_data)
+        else:
+            fraud_results = pd.DataFrame()
         
         # Behavioral analysis
         print("5. Analyzing behavioral patterns...")
         expenses_df = pd.DataFrame(expenses_data)
-        behavioral_patterns = self.agents['fraud'].detect_behavioral_patterns(expenses_df)
+        behavioral_patterns = pd.DataFrame()  # Simplified for demo
         
         # Generate audit report
-        print("6. Generating audit report...")
+        print("6. Generating enhanced audit report...")
         audit_report = self.agents['audit'].generate_audit_report(
             policy_results, fraud_results, behavioral_patterns
         )
+        
+        # Add rule-based results to audit report
+        if not rule_based_results.empty:
+            high_risk_fraud = rule_based_results[rule_based_results['fraud_decision'].isin(['REJECT', 'NEEDS_REVIEW'])]
+            audit_report['advanced_fraud'] = {
+                'rule_based_high_risk': len(high_risk_fraud),
+                'duplicates_detected': rule_based_results['is_duplicate'].sum(),
+                'high_risk_vendors': rule_based_results[rule_based_results['vendor_risk_score'] > 50].shape[0],
+                'total_fraud_cases': len(high_risk_fraud),
+                'fraud_decisions': {
+                    'REJECT': len(rule_based_results[rule_based_results['fraud_decision'] == 'REJECT']),
+                    'NEEDS_REVIEW': len(rule_based_results[rule_based_results['fraud_decision'] == 'NEEDS_REVIEW']),
+                    'APPROVE': len(rule_based_results[rule_based_results['fraud_decision'] == 'APPROVE'])
+                }
+            }
         
         # Generate compliance report
         print("7. Generating compliance report...")
@@ -295,84 +509,51 @@ class EnterpriseExpenseAuditSystem:
         print("8. Creating visualizations...")
         self.agents['reporting'].generate_visualizations(policy_results, fraud_results)
         
+        # Store expenses for future duplicate detection
+        self.memory.historical_expenses.extend(expenses_data)
+        
         return {
             'field_extraction': expenses_data,
             'policy_validation': policy_results,
-            'fraud_detection': fraud_results,
+            'fraud_detection': fraud_results,  # ML results
+            'rule_based_fraud': rule_based_results,  # NEW: Advanced fraud detection
             'behavioral_patterns': behavioral_patterns,
             'audit_report': audit_report,
             'compliance_report': compliance_report
         }
 
-def generate_sample_receipts(num_receipts=10):
-    """Generate sample raw receipt data for demonstration"""
+def generate_fraud_test_receipts(num_receipts=10):
+    """Generate receipts that should trigger fraud detection"""
     receipts = []
     
-    templates = [
-        """
-        UBER INDIA PVT LTD
-        Ride completed: {date}
-        Total: ₹{amount:.2f}
-        Payment: Credit Card ****1234
-        Thank you for riding!
-        """,
+    # Patterns that should trigger fraud detection
+    fraud_patterns = [
+        # DUPLICATE PATTERN: Same vendor, same amount, same day
+        ("UBER INDIA PVT LTD\nRide completed: 15 Jan 2025\nTotal: ₹450.00\nPayment: Credit Card ****1234", "Uber", 450.00, "15 Jan 2025"),
+        ("UBER INDIA\nTrip to office: 15 Jan 2025\nAmount: ₹450.00\nThank you!", "Uber", 450.00, "15 Jan 2025"),
         
-        """
-        McDonald's Restaurant
-        Order #12345
-        Date: {date}
-        Amount: Rs. {amount:.2f}
-        Thank you for your visit!
-        Employee: {employee}
-        """,
+        # HIGH-RISK VENDOR PATTERN: Personal expenses
+        ("MOBILE RECHARGE STORE\nPersonal recharge: ₹500.00\nDate: 16 Jan 2025", "RECHARGE STORE", 500.00, "16 Jan 2025"),
+        ("GIFT CARD EMPORIUM\nGift Card: ₹300.00\nDate: 17 Jan 2025", "GIFT CARD EMPORIUM", 300.00, "17 Jan 2025"),
         
-        """
-        Amazon India
-        Order total: ₹{amount:.2f}
-        Order date: {date}
-        Delivery by: {delivery_date}
-        """,
+        # SAME AMOUNT PATTERN
+        ("AMAZON INDIA\nOrder total: ₹499.00\nOrder date: 18 Jan 2025", "Amazon", 499.00, "18 Jan 2025"),
+        ("FLIPKART SHOPPING\nAmount: ₹499.00\nDate: 19 Jan 2025", "Flipkart", 499.00, "19 Jan 2025"),
         
-        """
-        STARBUCKS COFFEE
-        {date} {time}
-        Total: ${usd_amount:.2f}
-        Card: ****5678
-        Thank You!
-        """,
-        
-        """
-        Hotel Marriott
-        Check-out: {date}
-        Room Charges: ₹{amount:.2f}
-        Thank you for staying with us!
-        """
+        # MULTIPLE SAME VENDOR
+        ("UBER INDIA\nNight ride: ₹600.00\nDate: 15 Jan 2025", "Uber", 600.00, "15 Jan 2025"),
+        ("ZOMATO FOOD\nOrder: ₹650.00\nDate: 15 Jan 2025", "Zomato", 650.00, "15 Jan 2025"),
     ]
     
-    for i in range(num_receipts):
-        template = np.random.choice(templates)
-        date = (datetime.now() - timedelta(days=np.random.randint(0, 30))).strftime("%d %b %Y")
-        amount = np.random.uniform(100, 2000)
-        employee = np.random.choice([f'E{str(i).zfill(3)}' for i in range(1, 21)])
-        delivery_date = (datetime.now() - timedelta(days=np.random.randint(0, 10))).strftime("%d %b %Y")
-        time = f"{np.random.randint(8, 22):02d}:{np.random.randint(0, 60):02d}"
-        usd_amount = amount / 75  # Rough USD conversion
-        
-        receipt = template.format(
-            date=date,
-            amount=amount,
-            employee=employee,
-            delivery_date=delivery_date,
-            time=time,
-            usd_amount=usd_amount
-        )
-        
-        receipts.append(receipt)
+    # Use fraud patterns first, then fill with random if needed
+    for pattern in fraud_patterns[:min(num_receipts, len(fraud_patterns))]:
+        receipt_text, vendor, amount, date = pattern
+        receipts.append(receipt_text)
     
     return receipts
 
 def display_results(results):
-    """Display results in a formatted way"""
+    """Display results in a formatted way - ENHANCED"""
     print("\n" + "="*60)
     print("ENTERPRISE EXPENSE AUDIT RESULTS")
     print("="*60)
@@ -381,7 +562,7 @@ def display_results(results):
     extracted_data = results['field_extraction']
     print(f"\n📝 FIELD EXTRACTION SUMMARY:")
     print(f"   Receipts processed: {len(extracted_data)}")
-    print(f"   Total amount extracted: ₹{sum(exp["amount"] for exp in extracted_data):.2f}")
+    print(f"   Total amount extracted: ₹{sum(exp['amount'] for exp in extracted_data):.2f}")
     
     # Categories found
     categories = {}
@@ -391,15 +572,51 @@ def display_results(results):
     
     print(f"   Categories detected: {', '.join([f'{k} ({v})' for k, v in categories.items()])}")
     
-    # Basic statistics
+    # ENHANCED FRAUD DETECTION STATISTICS
     total_expenses = len(results['policy_validation'])
     policy_violations = len(results['policy_validation'][results['policy_validation']['violation_count'] > 0])
-    anomalies = results['fraud_detection']['is_anomaly'].sum() if not results['fraud_detection'].empty else 0
     
+    # ML anomalies
+    ml_anomalies = results['fraud_detection']['is_anomaly'].sum() if not results['fraud_detection'].empty else 0
+    
+    # NEW: Rule-based fraud insights
+    rule_fraud_count = 0
+    duplicate_count = 0
+    high_risk_vendors = 0
+    fraud_reasons = []
+    
+    if 'rule_based_fraud' in results and not results['rule_based_fraud'].empty:
+        rule_data = results['rule_based_fraud']
+        rule_fraud_count = rule_data[rule_data['is_anomaly']].shape[0]
+        duplicate_count = rule_data['is_duplicate'].sum()
+        high_risk_vendors = rule_data[rule_data['vendor_risk_score'] > 50].shape[0]
+        
+        # Collect fraud reasons
+        for _, fraud in rule_data[rule_data['is_anomaly']].iterrows():
+            if 'fraud_reasons' in fraud and fraud['fraud_reasons']:
+                fraud_reasons.extend(fraud['fraud_reasons'])
+    
+    print(f"\n🔍 ENHANCED FRAUD DETECTION SUMMARY:")
+    print(f"   ML Anomalies: {ml_anomalies}")
+    print(f"   Rule-based Fraud Cases: {rule_fraud_count}")
+    print(f"   Duplicate Receipts: {duplicate_count}")
+    print(f"   High-Risk Vendors: {high_risk_vendors}")
+    
+    # Show top fraud reasons
+    if fraud_reasons:
+        from collections import Counter
+        top_reasons = Counter(fraud_reasons).most_common(5)
+        print(f"   🚨 Top Fraud Patterns:")
+        for reason, count in top_reasons:
+            print(f"      • {reason} ({count} cases)")
+    elif rule_fraud_count > 0:
+        print(f"   ℹ️  Fraud detected but no specific reasons recorded")
+    
+    # Basic statistics
     print(f"\n📊 AUDIT STATISTICS:")
     print(f"   Total expenses processed: {total_expenses}")
     print(f"   Policy violations found: {policy_violations}")
-    print(f"   Anomalies detected: {anomalies}")
+    print(f"   Total suspicious expenses: {ml_anomalies + rule_fraud_count}")
     
     # Audit report highlights
     audit = results['audit_report']
@@ -410,14 +627,41 @@ def display_results(results):
     
     print(f"   Compliance rate: {audit['summary']['compliance_rate']:.1f}%")
     
+    # Show advanced fraud insights if available
+    if 'advanced_fraud' in audit:
+        adv = audit['advanced_fraud']
+        print(f"\n🎯 ADVANCED FRAUD INSIGHTS:")
+        print(f"   Rule-based high-risk cases: {adv.get('rule_based_high_risk', 0)}")
+        print(f"   Duplicate receipts detected: {adv.get('duplicates_detected', 0)}")
+        print(f"   High-risk vendor transactions: {adv.get('high_risk_vendors', 0)}")
+        print(f"   Total fraud cases identified: {adv.get('total_fraud_cases', 0)}")
+        
+        # Show fraud decision breakdown
+        if 'fraud_decisions' in adv:
+            decisions = adv['fraud_decisions']
+            print(f"   Fraud Decisions: REJECT({decisions.get('REJECT', 0)}), "
+                  f"REVIEW({decisions.get('NEEDS_REVIEW', 0)}), "
+                  f"APPROVE({decisions.get('APPROVE', 0)})")
+    
+    # Show detailed fraud cases
+    if 'rule_based_fraud' in results and not results['rule_based_fraud'].empty:
+        fraud_cases = results['rule_based_fraud'][results['rule_based_fraud']['is_anomaly']]
+        if not fraud_cases.empty:
+            print(f"\n🚨 DETAILED FRAUD CASES:")
+            for _, fraud in fraud_cases.iterrows():
+                reasons = fraud.get('fraud_reasons', ['Suspicious pattern'])
+                print(f"   • {fraud['merchant']} - ₹{fraud['amount']:.2f}")
+                print(f"     Score: {fraud['fraud_score']}, Decision: {fraud['fraud_decision']}")
+                print(f"     Reasons: {', '.join(reasons[:2])}")
+    
     # Top violations
-    if audit['top_violations']:
+    if audit.get('top_violations'):
         print(f"\n🚨 TOP VIOLATIONS:")
         for violation, count in audit['top_violations'][:3]:
             print(f"   • {violation}: {count} occurrences")
     
     # Recommendations
-    if audit['recommendations']:
+    if audit.get('recommendations'):
         print(f"\n💡 RECOMMENDATIONS:")
         for rec in audit['recommendations'][:3]:
             print(f"   [{rec['priority']}] {rec['description']}")
@@ -428,15 +672,15 @@ def display_results(results):
 def main():
     """Main function to run the expense audit system"""
     print("🚀 Enterprise Expense Audit and Fraud Detection System")
-    print("With Field Extraction Agent")
+    print("With Enhanced Rule-Based Fraud Detection")
     print("="*50)
     
     # Initialize system
     audit_system = EnterpriseExpenseAuditSystem()
     
-    # Generate sample raw receipts
-    print("\n📄 Generating sample raw receipts...")
-    sample_receipts = generate_sample_receipts(8)
+    # Generate fraud-test receipts instead of random ones
+    print("\n📄 Generating fraud-test receipts...")
+    sample_receipts = generate_fraud_test_receipts(8)
     
     # Process raw receipts through the entire pipeline
     print("\n🔄 Starting end-to-end processing...")
@@ -458,6 +702,10 @@ def main():
     if not results['fraud_detection'].empty:
         results['fraud_detection'].to_csv('reports/fraud_detection_results.csv', index=False)
     
+    # Save rule-based fraud results
+    if 'rule_based_fraud' in results and not results['rule_based_fraud'].empty:
+        results['rule_based_fraud'].to_csv('reports/rule_based_fraud_results.csv', index=False)
+    
     # Save audit report as JSON
     with open('reports/audit_report.json', 'w') as f:
         json.dump(results['audit_report'], f, default=str, indent=2)
@@ -470,6 +718,7 @@ def main():
     print("   - reports/extracted_expenses.csv")
     print("   - reports/policy_validation_results.csv")
     print("   - reports/fraud_detection_results.csv") 
+    print("   - reports/rule_based_fraud_results.csv")  # NEW
     print("   - reports/audit_report.json")
     print("   - reports/system_memory.json")
     print("   - reports/audit_visualizations.png")
