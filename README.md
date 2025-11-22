@@ -19,7 +19,7 @@ A comprehensive multi-agent system for expense auditing and fraud detection.
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/EnterpriseExpenseAudit.git
+git clone https://github.com/ArchithaKurukkanari/EnterpriseExpenseAudit.git
 
 # Install dependencies
 pip install -r requirements.txt
