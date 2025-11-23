@@ -1,4 +1,3 @@
-
 import sys
 import os
 
@@ -53,5 +52,45 @@ def quick_demo():
     
     print("✅ Demo completed! Run 'python main.py' for the full multi-agent system.")
 
+def demo_summary_agent():
+    """Demo the summary explanation capabilities"""
+    try:
+        from src.agents.summary_agent import SummaryAgent
+        
+        agent = SummaryAgent()
+        
+        # Sample integrated P2 output (policy + fraud)
+        sample_p2_output = {
+            "decision": "NEEDS_REVIEW",
+            "final_risk_score": 65,
+            "policy_violations": ["amount_limit", "late_submission"],
+            "reasons": ["vendor_frequency", "category_mismatch"]
+        }
+        
+        sample_expense = {
+            "vendor": "Premium Taxi Service",
+            "amount": "₹1200.00",
+            "date": "2025-01-18",
+            "category": "Local Travel",
+            "employee_id": "EMP123"
+        }
+        
+        result = agent.generate(sample_expense, sample_p2_output)
+        
+        print("\n🎯 EXPENSE REVIEW SUMMARY")
+        print("=" * 50)
+        print(f"📝 {result['summary_text']}")
+        print(f"✅ Confidence: {result['confidence_score']}%")
+        print(f"💡 Recommendation: {result['recommendation']}")
+        print("\n🔍 Detailed Analysis:")
+        for point in result['explanation_points']:
+            print(f"   • {point}")
+            
+    except ImportError as e:
+        print(f"❌ SummaryAgent not available: {e}")
+    except Exception as e:
+        print(f"❌ Error in summary demo: {e}")
+
 if __name__ == "__main__":
     quick_demo()
+    demo_summary_agent()

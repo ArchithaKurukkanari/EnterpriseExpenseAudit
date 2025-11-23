@@ -327,6 +327,15 @@ except ImportError as e:
     USE_ENHANCED_AGENT = False
     print(f"⚠️ Using built-in AdvancedFraudDetector: {e}")
 
+# Import SummaryAgent
+try:
+    from src.agents.summary_agent import SummaryAgent
+    USE_SUMMARY_AGENT = True
+    print("✅ Using SummaryAgent for human-friendly explanations")
+except ImportError as e:
+    USE_SUMMARY_AGENT = False
+    print(f"⚠️ SummaryAgent not available: {e}")
+
 class PolicyAgent:
     def __init__(self, memory, config):
         self.memory = memory
@@ -421,12 +430,60 @@ class Config:
             'categories': ['Travel', 'Meals', 'Entertainment', 'Supplies', 'Software', 'Accommodation', 'Shopping', 'Other', 'Personal']
         })()
 
+# Summary Agent Integration
+class SummaryProcessor:
+    def __init__(self):
+        self.summary_agent = SummaryAgent() if USE_SUMMARY_AGENT else None
+    
+    def generate_summaries(self, expenses_data, rule_based_results):
+        """Generate human-friendly summaries for all expenses"""
+        if not self.summary_agent:
+            print("⚠️  SummaryAgent not available - skipping summary generation")
+            return pd.DataFrame()
+        
+        summaries = []
+        print("    📝 Generating human-friendly explanations...")
+        
+        for expense in expenses_data:
+            # Find corresponding fraud result
+            fraud_result = rule_based_results[rule_based_results['expense_id'] == expense['id']]
+            if fraud_result.empty:
+                continue
+            
+            fraud_row = fraud_result.iloc[0]
+            
+            # Create P2 output format for summary agent
+            p2_output = {
+                "decision": fraud_row['fraud_decision'],
+                "final_risk_score": fraud_row['fraud_score'],
+                "policy_violations": [],  # Could integrate with policy results
+                "reasons": fraud_row.get('fraud_reasons', [])
+            }
+            
+            # Generate summary
+            summary_result = self.summary_agent.generate(expense, p2_output)
+            
+            summaries.append({
+                'expense_id': expense['id'],
+                'employee_id': expense['employee_id'],
+                'merchant': expense['merchant'],
+                'amount': expense['amount'],
+                'summary_text': summary_result['summary_text'],
+                'confidence_score': summary_result['confidence_score'],
+                'recommendation': summary_result['recommendation'],
+                'explanation_points': summary_result['explanation_points'],
+                'review_timestamp': summary_result['review_timestamp']
+            })
+        
+        return pd.DataFrame(summaries)
+
 # Main System Class
 class EnterpriseExpenseAuditSystem:
     def __init__(self):
         self.config = Config()
         self.memory = MemoryManager()
         self.advanced_fraud_detector = AdvancedFraudDetector()
+        self.summary_processor = SummaryProcessor()
         
         self.agents = {
             'field_extraction': FieldExtractionAgent(),
@@ -473,13 +530,17 @@ class EnterpriseExpenseAuditSystem:
         else:
             fraud_results = pd.DataFrame()
         
+        # NEW: Generate human-friendly summaries
+        print("5. Generating human-friendly explanations...")
+        summary_results = self.summary_processor.generate_summaries(expenses_data, rule_based_results)
+        
         # Behavioral analysis
-        print("5. Analyzing behavioral patterns...")
+        print("6. Analyzing behavioral patterns...")
         expenses_df = pd.DataFrame(expenses_data)
         behavioral_patterns = pd.DataFrame()  # Simplified for demo
         
         # Generate audit report
-        print("6. Generating enhanced audit report...")
+        print("7. Generating enhanced audit report...")
         audit_report = self.agents['audit'].generate_audit_report(
             policy_results, fraud_results, behavioral_patterns
         )
@@ -500,13 +561,13 @@ class EnterpriseExpenseAuditSystem:
             }
         
         # Generate compliance report
-        print("7. Generating compliance report...")
+        print("8. Generating compliance report...")
         compliance_report = self.agents['reporting'].generate_compliance_report(
             policy_results, fraud_results
         )
         
         # Generate visualizations
-        print("8. Creating visualizations...")
+        print("9. Creating visualizations...")
         self.agents['reporting'].generate_visualizations(policy_results, fraud_results)
         
         # Store expenses for future duplicate detection
@@ -517,6 +578,7 @@ class EnterpriseExpenseAuditSystem:
             'policy_validation': policy_results,
             'fraud_detection': fraud_results,  # ML results
             'rule_based_fraud': rule_based_results,  # NEW: Advanced fraud detection
+            'summary_results': summary_results,  # NEW: Human-friendly summaries
             'behavioral_patterns': behavioral_patterns,
             'audit_report': audit_report,
             'compliance_report': compliance_report
@@ -612,6 +674,22 @@ def display_results(results):
     elif rule_fraud_count > 0:
         print(f"   ℹ️  Fraud detected but no specific reasons recorded")
     
+    # NEW: Summary Results Display
+    if 'summary_results' in results and not results['summary_results'].empty:
+        print(f"\n📋 HUMAN-FRIENDLY SUMMARIES:")
+        summary_data = results['summary_results']
+        print(f"   Summaries generated: {len(summary_data)}")
+        
+        # Show sample summaries
+        sample_summaries = summary_data.head(2)
+        for _, summary in sample_summaries.iterrows():
+            print(f"\n   🎯 {summary['merchant']} - ₹{summary['amount']:.2f}")
+            print(f"      Summary: {summary['summary_text']}")
+            print(f"      Confidence: {summary['confidence_score']}%")
+            print(f"      Recommendation: {summary['recommendation']}")
+            if summary['explanation_points'] and len(summary['explanation_points']) > 0:
+                print(f"      Key Points: {summary['explanation_points'][0]}")
+    
     # Basic statistics
     print(f"\n📊 AUDIT STATISTICS:")
     print(f"   Total expenses processed: {total_expenses}")
@@ -672,7 +750,7 @@ def display_results(results):
 def main():
     """Main function to run the expense audit system"""
     print("🚀 Enterprise Expense Audit and Fraud Detection System")
-    print("With Enhanced Rule-Based Fraud Detection")
+    print("With Enhanced Rule-Based Fraud Detection & Human-Friendly Summaries")
     print("="*50)
     
     # Initialize system
@@ -706,6 +784,10 @@ def main():
     if 'rule_based_fraud' in results and not results['rule_based_fraud'].empty:
         results['rule_based_fraud'].to_csv('reports/rule_based_fraud_results.csv', index=False)
     
+    # NEW: Save summary results
+    if 'summary_results' in results and not results['summary_results'].empty:
+        results['summary_results'].to_csv('reports/summary_results.csv', index=False)
+    
     # Save audit report as JSON
     with open('reports/audit_report.json', 'w') as f:
         json.dump(results['audit_report'], f, default=str, indent=2)
@@ -718,7 +800,8 @@ def main():
     print("   - reports/extracted_expenses.csv")
     print("   - reports/policy_validation_results.csv")
     print("   - reports/fraud_detection_results.csv") 
-    print("   - reports/rule_based_fraud_results.csv")  # NEW
+    print("   - reports/rule_based_fraud_results.csv")
+    print("   - reports/summary_results.csv")  # NEW
     print("   - reports/audit_report.json")
     print("   - reports/system_memory.json")
     print("   - reports/audit_visualizations.png")
