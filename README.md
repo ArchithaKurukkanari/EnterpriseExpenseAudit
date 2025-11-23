@@ -2,9 +2,6 @@
 
 A multi-agent AI system for automated expense auditing with advanced fraud detection and human-friendly explanations.
 
-![Python](https://img.shields.io/badge/Python-3.8%2B-blue)
-![ML](https://img.shields.io/badge/Machine%20Learning-Scikit--learn-orange)
-![Status](https://img.shields.io/badge/Status-Production%20Ready-green)
 
 ## 🎯 Overview
 
